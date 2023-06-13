@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.functional as F
+import torch.nn.functional as F
 from torch import Tensor
 from einops import einsum, repeat
 import math
@@ -48,20 +48,21 @@ class AttentionBlock(nn.Module):
 
     def __init__(self, n_heads: int, d_head: int, d_model: int):
         super().__init__()
+        self.d_head = d_head
         self.Q_w = nn.Parameter(torch.empty(n_heads, d_model, d_head))
-        nn.xaxier_uniform_(self.Q_w)
+        nn.init.xavier_normal_(self.Q_w)
         self.Q_b = nn.Parameter(torch.empty(n_heads, d_head))
 
         self.K_w = nn.Parameter(torch.empty(n_heads, d_model, d_head))
-        nn.xaxier_uniform_(self.K_w)
+        nn.init.xavier_normal_(self.K_w)
         self.K_b = nn.Parameter(torch.empty(n_heads, d_head))
 
         self.V_w = nn.Parameter(torch.empty(n_heads, d_model, d_head))
-        nn.xaxier_uniform_(self.V_w)
+        nn.init.xavier_normal_(self.V_w)
         self.V_b = nn.Parameter(torch.empty(n_heads, d_head))
 
         self.O_w = nn.Parameter(torch.empty(n_heads, d_model, d_head))
-        nn.xaxier_uniform_(self.O_w)
+        nn.init.xavier_normal_(self.O_w)
         self.O_b = nn.Parameter(torch.empty(n_heads, d_head))
 
     def forward(self, x: Tensor) -> Tensor:
@@ -72,12 +73,12 @@ class AttentionBlock(nn.Module):
             x: A residual stream tensor of shape (b, position, d_model)
         """
         # the model selects relevant positions by predicting indicies of queries
-        queries = einsum("b pos d_m, head d_m d_h -> b pos head d_h", x, self.Q_w) + self.Q_b
+        queries = einsum(x, self.Q_w, "b pos d_m, head d_m d_h -> b pos head d_h") + self.Q_b
         # ... and the corresponding lookup table to the values
-        keys = einsum("b pos d_m, head d_m d_h -> b pos head d_h", x, self.K_w) + self.K_b
+        keys = einsum(x, self.K_w, "b pos d_m, head d_m d_h -> b pos head d_h") + self.K_b
 
         # applying the attention operation
-        attention_logits = einsum("b q_pos head d_h, b k_pos head d_h -> b head q_pos k_pos", queries, keys)
+        attention_logits = einsum(queries, keys, "b q_pos head d_h, b k_pos head d_h -> b head q_pos k_pos")
         attention_logits /= math.sqrt(self.d_head)
 
         # masking the upper diagonal - the model shouldn't be able to look ahead
@@ -91,20 +92,20 @@ class AttentionBlock(nn.Module):
         attention_scores = attention_masked.softmax(-1)
 
         # the model also has internal feature embeddings for the values at the positions its interested in
-        values = einsum("b pos d_m, head d_m d_h -> b pos head d_h", x, self.V_w) + self.V_b
+        values = einsum(x, self.V_w, "b pos d_m, head d_m d_h -> b pos head d_h") + self.V_b
         # and now selects the values based on the keys which are most relevant to the query
         attention = einsum(
-            "b head q_pos k_pos, b k_pos head d_h -> b q_pos head d_h",
-            attention,
+            attention_scores,
             values,
+            "b head q_pos k_pos, b k_pos head d_h -> b q_pos head d_h",
         )
 
         # a final linear projection helps the model decide which subspace in the residual stream to write to.
         return (
             einsum(
-                "b q_pos head d_h, head d_h d_model -> b q_pos d_model",
                 attention,
                 self.O_w,
+                "b q_pos head d_h, head d_h d_model -> b q_pos d_model",
             )
             + self.O_b
         )
@@ -114,20 +115,21 @@ class MLP(nn.Module):
     def __init__(self, d_model: int, d_mlp: int, activation=F.gelu):
         super().__init__()
         self.In_w = nn.Parameter(torch.empty((d_model, d_mlp)))
-        nn.init.xavier_normal_(self.W_in, std=self.init_range)
-        self.b_in = nn.Parameter(torch.empty((d_mlp)))
+        nn.init.xavier_normal_(self.In_w)
+        self.In_b = nn.Parameter(torch.empty((d_mlp)))
 
         self.Out_w = nn.Parameter(torch.empty((d_mlp, d_model)))
-        nn.init.xavier_normal_(self.W_out, std=self.init_range)
+        nn.init.xavier_normal_(self.Out_w)
         self.Out_b = nn.Parameter(torch.empty((d_model)))
 
         self.activation = activation
 
     def forward(self, x: Tensor) -> Tensor:
         # This block just seems to perform some kind of learned nonlinear operation after attention has been applied to the residual stream.
-        x = einsum("b pos d_m, d_m d_mlp -> b pos d_mlp", x, self.In_w) + self.In_b
+        x = einsum(x, self.In_w, "b pos d_m, d_m d_mlp -> b pos d_mlp") + self.In_b
         x = self.activation(x)
-        x = einsum("b pos d_mlp, d_mlp d_m -> b pos d_m", x, self.Out_w) + self.Out_b
+        x = einsum(x, self.Out_w, "b pos d_mlp, d_mlp d_m -> b pos d_m") + self.Out_b
+        return x
 
 
 class TransformerBlock(nn.Module):
@@ -166,7 +168,7 @@ class EmbeddingBlock(nn.Module):
     def __init__(self, d_vocab: int, d_model: int):
         super().__init__()
         self.E_w = nn.Parameter(torch.empty((d_vocab, d_model)))
-        nn.init.xavier_normal_(self.W_E, std=self.cfg.init_range)
+        nn.init.xavier_normal_(self.E_w)
 
     def forward(self, x: Tensor):
         """
@@ -209,8 +211,7 @@ class UnembeddingBlock(nn.Module):
         Args:
             x: a residual stream Tensor of shape [batch position, d_model]
         """
-
-        logits = einsum("batch position d_model, d_model d_vocab -> batch position d_vocab", x, self.U_w)
+        logits = einsum(x, self.U_w, "batch position d_model, d_model d_vocab -> batch position d_vocab")
         logits += self.U_b
         return logits
 
@@ -233,4 +234,4 @@ class Transformer(nn.Module):
         for layer in self.transformer_blocks:
             residual = layer(residual)
         residual = self.ln(residual)
-        return self.unembedding_block(x)
+        return self.unembedding_block(residual)

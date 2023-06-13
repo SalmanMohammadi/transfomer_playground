@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Tuple, List, Union
 from torch import Tensor
 import pgn
+import itertools
 
 BOARD_CHARS = list("abcdefgh")
 
@@ -57,12 +58,30 @@ def get_othello_championship_games(data_root: Path):
 
 
 class OthelloDataset(Dataset):
-    def __init__(self, data_root: Union[str, Path]):
+    def __init__(self, data_root: Union[str, Path], seq_len: int):
         data_root = Path(data_root)
+        center_tiles = [27, 28, 35, 36]
+        vocabulary = list(range(64))
+        [vocabulary.remove(x) for x in center_tiles]
+        self.vocabulary = sorted(vocabulary + [-100])
+        self.vocabulary_size = len(self.vocabulary)
+        self.seq_len = seq_len
+        self.block_size = seq_len - 1
+        self.board_to_vocabulary = {word: i for i, word in enumerate(self.vocabulary)}
+        self.vocabulary_to_board = {i: word for i, word in enumerate(self.vocabulary)}
         self.game_sequences, self.game_results = get_othello_championship_games(data_root)
 
     def __len__(self) -> int:
         return len(self.game_sequences)
 
     def __getitem__(self, idx: int) -> Tuple[Tensor, Tensor]:
-        return self.game_sequences[idx], self.game_results[idx]
+        block = self.game_sequences[idx]
+        block += [
+            -100,
+        ] * (self.seq_len - len(block))
+        if len(block) != self.seq_len:
+            block = block + [
+                -100,
+            ] * (self.seq_len - len(block))
+        block = [self.board_to_vocabulary[s] for s in block]
+        return Tensor(block[:-1]), Tensor(block[1:])
