@@ -1,9 +1,9 @@
 from torch.utils.data import Dataset
 from pathlib import Path
 from typing import Tuple, List, Union
+import torch
 from torch import Tensor
 import pgn
-import itertools
 
 BOARD_CHARS = list("abcdefgh")
 
@@ -76,12 +76,9 @@ class OthelloDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[Tensor, Tensor]:
         block = self.game_sequences[idx]
-        block += [
-            -100,
-        ] * (self.seq_len - len(block))
         if len(block) != self.seq_len:
-            block = block + [
+            block += [
                 -100,
             ] * (self.seq_len - len(block))
         block = [self.board_to_vocabulary[s] for s in block]
-        return Tensor(block[:-1]), Tensor(block[1:])
+        return torch.tensor(block[:-1], dtype=torch.long), torch.tensor(block[1:], dtype=torch.long)

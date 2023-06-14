@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
-from einops import einsum, repeat
+from einops import einsum, repeat, rearrange
 import math
 
 
@@ -30,7 +30,9 @@ class LayerNorm(nn.Module):
 
             x = xw^T + b
         Args:
-            x: A residual stream tensor of shape (b, position, d_model)
+            x: A residual stream tensor of shape (batch, position, d_model)
+        Returns:
+            A tensor of shape (batch, position, d_model).
         """
         # in practice we can divide by the variance + epsilon (1e-7)
         x = (x - x.mean(-1, keepdim=True)) / x.std(-1, keepdim=True)
@@ -67,10 +69,12 @@ class AttentionBlock(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         """
-        Applies a causaul attention mechanism to a residual stream vector `x`.
+        Applies a causal attention mechanism to a residual stream vector `x`.
 
         Args:
-            x: A residual stream tensor of shape (b, position, d_model)
+            x: A residual stream tensor of shape (batch, position, d_model)
+        Returns:
+            A residual stream tensor of shape (batch, position, d_model)
         """
         # the model selects relevant positions by predicting indicies of queries
         queries = einsum(x, self.Q_w, "b pos d_m, head d_m d_h -> b pos head d_h") + self.Q_b
@@ -218,7 +222,15 @@ class UnembeddingBlock(nn.Module):
 
 class Transformer(nn.Module):
     def __init__(
-        self, n_blocks: int, n_heads: int, d_head: int, d_model: int, d_mlp: int, d_vocab: int, context_length: int
+        self,
+        n_blocks: int,
+        n_heads: int,
+        d_head: int,
+        d_model: int,
+        d_mlp: int,
+        d_vocab: int,
+        context_length: int,
+        device: torch.device = torch.device("cuda"),
     ):
         super().__init__()
         self.embedding_block = EmbeddingBlock(d_vocab, d_model)
@@ -228,6 +240,11 @@ class Transformer(nn.Module):
         )
         self.unembedding_block = UnembeddingBlock(d_vocab, d_model)
         self.ln = LayerNorm(d_model)
+        self.device = device
+
+    def to(self, device):
+        self.device = device
+        super().to(device)
 
     def forward(self, x: Tensor) -> Tensor:
         residual = self.embedding_block(x) + self.positional_embedding(x)
@@ -235,3 +252,15 @@ class Transformer(nn.Module):
             residual = layer(residual)
         residual = self.ln(residual)
         return self.unembedding_block(residual)
+
+    def loss(self, input: Tensor, target: Tensor) -> Tensor:
+        return F.cross_entropy(
+            rearrange(input, "b pos vocab -> (b pos) vocab"), rearrange(target, "b pos -> (b pos)"), ignore_index=0
+        )
+
+    def train_forward(self, x: Tensor, y: Tensor) -> Tensor:
+        x = x.to(self.device)
+        y = y.to(self.device)
+        logits = self(x)
+        loss = self.loss(logits, y)
+        return loss, logits

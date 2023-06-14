@@ -1,0 +1,16 @@
+lr: 0.001
+batch_size: 32
+num_workers: 2
+epochs: 100
+device: mps
+dataset:
+  data_root: /Users/salman/projects/transformer_playground/data/othello_championship
+  seq_len: 100
+model:
+  n_blocks: 1
+  n_heads: 1
+  d_head: 128
+  d_model: 128
+  d_mlp: 128
+  d_vocab: 60
+  context_length: 100
