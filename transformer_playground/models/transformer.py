@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch import Tensor
 from einops import einsum, repeat, rearrange
 import math
+import logging
 
 
 class LayerNorm(nn.Module):
@@ -63,9 +64,9 @@ class AttentionBlock(nn.Module):
         nn.init.xavier_normal_(self.V_w)
         self.V_b = nn.Parameter(torch.empty(n_heads, d_head))
 
-        self.O_w = nn.Parameter(torch.empty(n_heads, d_model, d_head))
+        self.O_w = nn.Parameter(torch.empty(n_heads, d_head, d_model))
         nn.init.xavier_normal_(self.O_w)
-        self.O_b = nn.Parameter(torch.empty(n_heads, d_head))
+        self.O_b = nn.Parameter(torch.empty(d_model))
 
     def forward(self, x: Tensor) -> Tensor:
         """

@@ -49,6 +49,7 @@ def load_othello_game(game_path: str) -> Tuple[List[int], List[int]]:
 
 def get_othello_championship_games(data_root: Path):
     game_paths = list(map(str, data_root.glob("*.pgn")))
+    assert len(game_paths) > 0, "The data directory doesn't contain any .pgn games!"
     game_sequences, game_results = [], []
     for game_path in game_paths:
         game_sequence, game_result = load_othello_game(game_path)
@@ -59,7 +60,6 @@ def get_othello_championship_games(data_root: Path):
 
 class OthelloDataset(Dataset):
     def __init__(self, data_root: Union[str, Path], seq_len: int):
-        data_root = Path(data_root)
         center_tiles = [27, 28, 35, 36]
         vocabulary = list(range(64))
         [vocabulary.remove(x) for x in center_tiles]
@@ -69,6 +69,7 @@ class OthelloDataset(Dataset):
         self.block_size = seq_len - 1
         self.board_to_vocabulary = {word: i for i, word in enumerate(self.vocabulary)}
         self.vocabulary_to_board = {i: word for i, word in enumerate(self.vocabulary)}
+        data_root = Path(data_root)
         self.game_sequences, self.game_results = get_othello_championship_games(data_root)
 
     def __len__(self) -> int:
