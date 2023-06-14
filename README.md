@@ -2,6 +2,6 @@ A place where I'm trying to understand transformers deeply and explore concepts 
 
 To get started:
 
-`pip install -e .` 
+`pip install -e .` in the root directory will install the project and its dependencies.
 
-in the root directory will install the project and its dependencies. 
+`python3 entrypoints/train.py yaml/transformer.yaml` runs training with the config specified in `yaml/transformer.yaml`.
