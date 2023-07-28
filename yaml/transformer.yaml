@@ -5,7 +5,7 @@ epochs: 100
 device: mps
 dataset:
   # point this to the directory you've cloned under, e.g. <user_directory>/transformer_playground/data/othello_championship
-  data_root: /Users/salman/projects/transformer_playground/data/othello_championship
+  data_root:  /Users/salman/projects/transformer_playground/data/othello_championship
   seq_len: 100
 model:
   n_blocks: 2
